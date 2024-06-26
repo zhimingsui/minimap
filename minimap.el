@@ -161,6 +161,12 @@ Use nil to disable."
   :type 'number
   :group 'minimap)
 
+(defcustom minimap-maximum-width 30
+  "Maximum width of minimap in characters (default size).
+Use nil to disable."
+  :type 'number
+  :group 'minimap)
+
 (defcustom minimap-window-location 'left
   "Location of the minimap window.
 Can be either the symbol `left' or `right'."
@@ -371,11 +377,10 @@ from `minimap-major-modes' (excluding the minibuffer)."
     (kill-buffer minimap-buffer-name)))
 
 (defun minimap-create-window ()
-  (let ((width (round (* (window-width)
-			 minimap-width-fraction)))
+  (let ((width (minimap-apply-width-limits
+                (round (* (window-width)
+			 minimap-width-fraction))))
 	buffer-window)
-    (when (< width minimap-minimum-width)
-      (setq width minimap-minimum-width))
     (if (eq minimap-window-location 'left)
 	;; The existing window becomes the minimap
 	(progn
@@ -421,6 +426,17 @@ If REMOVE is non-nil, remove minimap from other modes."
     (add-hook 'hs-hide-hook 'minimap-sync-overlays)
     (add-hook 'hs-show-hook 'minimap-sync-overlays)
     (add-hook 'flycheck-after-syntax-check-hook 'minimap-sync-overlays)))
+
+(defun minimap-apply-width-limits (desired-width)
+  "Takes a desired width and applies the `minimap-minimum-width'
+and `minimap-maximum-width' values to it then returns the width the
+window should be."
+  (let ((width desired-width))
+    (when (and minimap-minimum-width (< minimap-minimum-width width))
+      (setq width minimap-minimum-width))
+    (when (and minimap-maximum-width (> minimap-maximum-width width))
+      (setq width minimap-maximum-width))
+    width))
 
 ;;; Minimap creation / killing
 
@@ -597,6 +613,11 @@ This depends on `minimap-automatically-delete-window'."
 	(when minimap-dedicated-window
 	  (set-window-dedicated-p nil t))))
     (with-selected-window win
+      ;; Make sure the buffer doesn't violate it's minimum/maximum sizes
+      (let* ((width (minimap-apply-width-limits (window-total-width)))
+             (delta (- width (window-total-width))))
+        (when (and (/= delta 0) (window-resizable nil delta t))
+          (window-resize nil delta t)))
       ;; Make sure the base overlay spans the whole buffer.
       (unless (and (= (overlay-start minimap-base-overlay) (point-min))
 		   (= (overlay-end minimap-base-overlay) (point-max)))
